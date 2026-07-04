@@ -81,7 +81,87 @@ export function render() {
   const orders = admin.getOrdersLog();
   const customersList = getCustomersList(orders);
 
+  // 1. Calculate Top Selling Product & Cancellation Rate
+  const productQuantities = {};
+  orders.forEach(o => {
+    if (o.status !== 'cancelled' && o.items) {
+      const parts = o.items.split('،');
+      parts.forEach(p => {
+        // e.g. "كريب زنجر دجاج × 2" or "كريب نوتيلا"
+        const match = p.match(/(.+?)\s*×\s*(\d+)/);
+        let name = '';
+        let qty = 1;
+        if (match) {
+          name = match[1].trim();
+          qty = parseInt(match[2].trim(), 10) || 1;
+        } else {
+          name = p.trim();
+        }
+        if (name) {
+          productQuantities[name] = (productQuantities[name] || 0) + qty;
+        }
+      });
+    }
+  });
+
+  let topProduct = 'لا يوجد مبيعات';
+  let maxProductQty = 0;
+  for (const [prod, qty] of Object.entries(productQuantities)) {
+    if (qty > maxProductQty) {
+      maxProductQty = qty;
+      topProduct = prod;
+    }
+  }
+
+  const cancelledOrders = orders.filter(o => o.status === 'cancelled').length;
+  const cancellationRate = orders.length ? Math.round((cancelledOrders / orders.length) * 100) : 0;
+
+  // 2. Calculate dynamic last 7 days sales for weekly report chart
+  const dayNames = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  const last7Days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const dayName = i === 0 ? 'اليوم' : dayNames[d.getDay()];
+    last7Days.push({
+      dateStr,
+      dayLabel: dayName,
+      sales: 0
+    });
+  }
+
+  orders.forEach(o => {
+    if (o.status !== 'cancelled') {
+      const match = last7Days.find(d => d.dateStr === o.date);
+      if (match) {
+        match.sales += o.total || 0;
+      }
+    }
+  });
+
+  const maxSales = Math.max(...last7Days.map(d => d.sales), 1);
+  const chartHtml = last7Days.map(d => {
+    const height = Math.max(10, Math.round((d.sales / maxSales) * 150));
+    const isToday = d.dayLabel === 'اليوم';
+    const barBg = isToday ? 'var(--color-secondary)' : 'var(--color-primary)';
+    const glow = isToday ? '0 0 15px rgba(255,209,102,0.4)' : 'var(--shadow-glow)';
+    
+    return `
+      <div style="display:flex; flex-direction:column; align-items:center; flex:1; position:relative;" class="chart-bar-container">
+        <div style="position:absolute; bottom:${height + 25}px; font-size:0.75rem; font-weight:800; color:var(--color-text); background:var(--color-bg-deep); padding:2px 6px; border-radius:4px; border:1px solid var(--color-border); opacity:0; pointer-events:none; transition:opacity 0.2s, transform 0.2s;" class="chart-tooltip">${d.sales} ج.م</div>
+        <div style="background:${barBg}; width:32px; height:${height}px; border-radius:6px 6px 0 0; box-shadow:${glow}; transition:height 0.3s ease-out; cursor:pointer;" class="chart-bar"></div>
+        <span style="font-size:0.75rem; color:${isToday ? 'var(--color-text)' : 'var(--color-text-muted)'}; margin-top:8px; font-weight:${isToday ? '800' : '500'}; font-family:'Outfit';">${d.dayLabel}</span>
+      </div>
+    `;
+  }).join('');
+
   return `
+    <style>
+      .chart-bar-container:hover .chart-tooltip { opacity: 1 !important; transform: translateY(-4px); }
+      .chart-bar:hover { filter: brightness(1.2); }
+    </style>
+
     <section class="page-header">
       <div class="container" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
         <div>
@@ -120,40 +200,22 @@ export function render() {
             <span style="font-size:0.75rem; color:var(--color-text-muted); display:block; font-weight:700;">إجمالي العملاء المسجلين:</span>
             <strong style="font-size:1.8rem; color:var(--color-text); font-family:'Outfit';">${customersList.length} عميل</strong>
           </div>
+          <div style="background:var(--color-bg-card); border:1px solid var(--color-border); padding:var(--space-lg); border-radius:var(--radius-xl); text-align:center; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+            <span style="font-size:0.75rem; color:var(--color-text-muted); display:block; font-weight:700;">الصنف الأكثر مبيعاً:</span>
+            <strong style="font-size:1.1rem; color:var(--color-secondary); display:block; margin-top:6px; font-weight:900; line-height:1.2;">${topProduct}</strong>
+            <span style="font-size:0.7rem; color:var(--color-text-muted); margin-top:2px;">${maxProductQty ? `(مبيعات: ${maxProductQty} قطعة)` : ''}</span>
+          </div>
+          <div style="background:var(--color-bg-card); border:1px solid var(--color-border); padding:var(--space-lg); border-radius:var(--radius-xl); text-align:center; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+            <span style="font-size:0.75rem; color:var(--color-text-muted); display:block; font-weight:700; margin-bottom:4px;">معدل إلغاء الطلبات:</span>
+            <strong style="font-size:1.8rem; color:var(--color-danger); font-family:'Outfit';">${cancellationRate}%</strong>
+          </div>
         </div>
 
         <!-- SVG Sales Chart -->
         <div class="profile-card">
-          <h2 style="font-weight:900; margin-bottom:var(--space-lg); border-bottom:1px solid var(--color-border); padding-bottom:12px;">تقرير مبيعات التيك أواي والدليفري الأسبوعي</h2>
+          <h2 style="font-weight:900; margin-bottom:var(--space-lg); border-bottom:1px solid var(--color-border); padding-bottom:12px;">تقرير مبيعات التيك أواي والدليفري الأسبوعي الفعلي</h2>
           <div style="width:100%; height:200px; display:flex; align-items:flex-end; justify-content:space-between; padding-top:20px; border-bottom:2px solid var(--color-border); padding-left:20px; padding-right:20px; direction:ltr;">
-            <div style="display:flex; flex-direction:column; align-items:center; flex:1;">
-              <div style="background:var(--color-primary); width:32px; height:120px; border-radius:6px 6px 0 0; box-shadow:var(--shadow-glow);"></div>
-              <span style="font-size:0.75rem; color:var(--color-text-muted); margin-top:8px; font-family:'Outfit';">الجمعة</span>
-            </div>
-            <div style="display:flex; flex-direction:column; align-items:center; flex:1;">
-              <div style="background:var(--color-primary); width:32px; height:90px; border-radius:6px 6px 0 0;"></div>
-              <span style="font-size:0.75rem; color:var(--color-text-muted); margin-top:8px; font-family:'Outfit';">السبت</span>
-            </div>
-            <div style="display:flex; flex-direction:column; align-items:center; flex:1;">
-              <div style="background:var(--color-primary); width:32px; height:140px; border-radius:6px 6px 0 0; box-shadow:var(--shadow-glow);"></div>
-              <span style="font-size:0.75rem; color:var(--color-text-muted); margin-top:8px; font-family:'Outfit';">الأحد</span>
-            </div>
-            <div style="display:flex; flex-direction:column; align-items:center; flex:1;">
-              <div style="background:var(--color-primary); width:32px; height:60px; border-radius:6px 6px 0 0;"></div>
-              <span style="font-size:0.75rem; color:var(--color-text-muted); margin-top:8px; font-family:'Outfit';">الاثنين</span>
-            </div>
-            <div style="display:flex; flex-direction:column; align-items:center; flex:1;">
-              <div style="background:var(--color-primary); width:32px; height:160px; border-radius:6px 6px 0 0; box-shadow:var(--shadow-glow);"></div>
-              <span style="font-size:0.75rem; color:var(--color-text-muted); margin-top:8px; font-family:'Outfit';">الثلاثاء</span>
-            </div>
-            <div style="display:flex; flex-direction:column; align-items:center; flex:1;">
-              <div style="background:var(--color-primary); width:32px; height:110px; border-radius:6px 6px 0 0;"></div>
-              <span style="font-size:0.75rem; color:var(--color-text-muted); margin-top:8px; font-family:'Outfit';">الأربعاء</span>
-            </div>
-            <div style="display:flex; flex-direction:column; align-items:center; flex:1;">
-              <div style="background:var(--color-secondary); width:32px; height:180px; border-radius:6px 6px 0 0; box-shadow:0 0 15px rgba(255,209,102,0.4);"></div>
-              <span style="font-size:0.75rem; color:var(--color-text); margin-top:8px; font-weight:800; font-family:'Outfit';">اليوم</span>
-            </div>
+            ${chartHtml}
           </div>
         </div>
 
@@ -276,6 +338,14 @@ export function render() {
             <div class="form-group" style="grid-column: span 2;">
               <label style="display:block; font-size:var(--font-size-xs); font-weight:700; margin-bottom:6px;">المكونات / المواصفات (مفصولة بفواصل ,)</label>
               <input type="text" id="addProdIngredients" class="notes-input" placeholder="مثال: مانجو طبيعي طازج, مثلج, بدون سكر مضاف" required />
+            </div>
+
+            <div class="form-group" style="grid-column: span 2;">
+              <label style="display:block; font-size:var(--font-size-xs); font-weight:700; margin-bottom:6px;">📸 صورة الصنف (اختر ملفاً أو اتركه فارغاً للافتراضي):</label>
+              <div style="display:flex; gap:12px; align-items:center;">
+                <input type="file" id="addProdImageFile" accept="image/*" class="notes-input" style="padding:8px; height:auto; flex:1;" />
+                <div id="addProdImagePreview" style="width:50px; height:50px; border-radius:8px; border:1px solid var(--color-border); background:var(--color-bg-deep); display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:1.3rem; user-select:none;">🖼️</div>
+              </div>
             </div>
 
             <div style="grid-column: 1 / -1; display:flex; justify-content:flex-end; margin-top:8px;">
@@ -747,6 +817,26 @@ export function init() {
     sound.playSuccess();
   });
 
+  // Image upload preview logic
+  let uploadedImageBase64 = '';
+  const imgFileInput = document.getElementById('addProdImageFile');
+  const imgPreviewContainer = document.getElementById('addProdImagePreview');
+
+  imgFileInput?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        uploadedImageBase64 = event.target.result;
+        imgPreviewContainer.innerHTML = `<img src="${uploadedImageBase64}" style="width:100%; height:100%; object-fit:cover;" />`;
+      };
+      reader.readAsDataURL(file);
+    } else {
+      uploadedImageBase64 = '';
+      imgPreviewContainer.innerHTML = '🖼️';
+    }
+  });
+
   // Bind add product form
   const formAddProduct = document.getElementById('formAddProduct');
   formAddProduct?.addEventListener('submit', (e) => {
@@ -760,7 +850,22 @@ export function init() {
     const ingredients = document.getElementById('addProdIngredients').value.split(',').map(s => s.trim()).filter(Boolean);
     
     const randomId = 'custom-' + Date.now();
-    const defaultImg = category === 'drinks' ? 'assets/images/products/dr-pepsi.png' : 'assets/images/chicken_crepe.png';
+    
+    // Choose high quality preset fallbacks based on category
+    let defaultImg = 'assets/images/products/ch-mozzarella.png';
+    if (category === 'drinks') {
+      defaultImg = 'assets/images/products/dr-pepsi.png';
+    } else if (category === 'fries') {
+      defaultImg = 'assets/images/products/fr-crepe-fries.png';
+    } else if (category === 'sweet') {
+      defaultImg = 'assets/images/products/sw-oreo.png';
+    } else if (category === 'chicken') {
+      defaultImg = 'assets/images/products/chk-crispy.png';
+    } else if (category === 'meat') {
+      defaultImg = 'assets/images/products/mt-burger.png';
+    }
+
+    const finalImage = uploadedImageBase64 || defaultImg;
 
     const newItem = {
       id: randomId,
@@ -770,7 +875,7 @@ export function init() {
       price,
       description: '',
       ingredients,
-      image: defaultImg
+      image: finalImage
     };
 
     addMenuItem(newItem);

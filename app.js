@@ -832,11 +832,15 @@ function renderAuthPage() {
             <div class="form-group">
               <label style="display:block; font-size:var(--font-size-xs); font-weight:700; margin-bottom:6px;">📱 رقم الموبايل (واتساب):</label>
               <input type="tel" id="rPhone" class="notes-input" placeholder="01xxxxxxxxx" maxlength="11" required />
+              <div id="rPhoneFeedback" style="font-size:0.75rem; font-weight:700; margin-top:4px; min-height:16px; transition:all 0.2s;"></div>
             </div>
 
             <div class="form-group">
               <label style="display:block; font-size:var(--font-size-xs); font-weight:700; margin-bottom:6px;">🔑 كلمة المرور:</label>
-              <input type="password" id="rPassword" class="notes-input" placeholder="أدخل كلمة مرور (4 أرقام/حروف على الأقل)" required />
+              <div style="position:relative; display:flex; align-items:center;">
+                <input type="password" id="rPassword" class="notes-input" placeholder="أدخل كلمة مرور (4 أرقام/حروف على الأقل)" style="padding-left:40px; width:100%;" required />
+                <span class="password-toggle" id="toggleRPassword" style="position:absolute; left:12px; cursor:pointer; font-size:1.1rem; user-select:none; padding:4px;">👁️</span>
+              </div>
             </div>
 
             <div class="form-group">
@@ -849,6 +853,11 @@ function renderAuthPage() {
               <input type="text" id="rArea" class="notes-input" placeholder="مثال: وسط البلد، الدرب الأحمر، الرحاب..." />
             </div>
 
+            <div class="form-group" style="display:flex; align-items:center; gap:8px; margin-top:4px; direction:rtl;">
+              <input type="checkbox" id="rRememberMe" checked style="width:18px; height:18px; cursor:pointer; accent-color:var(--color-primary);" />
+              <label for="rRememberMe" style="font-size:var(--font-size-sm); font-weight:700; cursor:pointer; user-select:none; color:var(--color-text-muted);">تذكرني على هذا الجهاز 💾</label>
+            </div>
+
             <button type="submit" class="btn btn-primary btn-lg btn-full" style="margin-top:12px;">حفظ وتأكيد الحساب 🚀</button>
           </form>
 
@@ -857,11 +866,21 @@ function renderAuthPage() {
             <div class="form-group">
               <label style="display:block; font-size:var(--font-size-xs); font-weight:700; margin-bottom:6px;">📱 أدخل رقم موبايلك المسجل لدينا:</label>
               <input type="tel" id="lPhone" class="notes-input" placeholder="01xxxxxxxxx" maxlength="11" required />
+              <div id="lPhoneFeedback" style="font-size:0.75rem; font-weight:700; margin-top:4px; min-height:16px; transition:all 0.2s;"></div>
             </div>
             <div class="form-group">
               <label style="display:block; font-size:var(--font-size-xs); font-weight:700; margin-bottom:6px;">🔑 أدخل كلمة المرور الخاصة بك:</label>
-              <input type="password" id="lPassword" class="notes-input" placeholder="أدخل كلمة مرور الحساب" required />
+              <div style="position:relative; display:flex; align-items:center;">
+                <input type="password" id="lPassword" class="notes-input" placeholder="أدخل كلمة مرور الحساب" style="padding-left:40px; width:100%;" required />
+                <span class="password-toggle" id="toggleLPassword" style="position:absolute; left:12px; cursor:pointer; font-size:1.1rem; user-select:none; padding:4px;">👁️</span>
+              </div>
             </div>
+
+            <div class="form-group" style="display:flex; align-items:center; gap:8px; margin-top:4px; direction:rtl;">
+              <input type="checkbox" id="lRememberMe" checked style="width:18px; height:18px; cursor:pointer; accent-color:var(--color-primary);" />
+              <label for="lRememberMe" style="font-size:var(--font-size-sm); font-weight:700; cursor:pointer; user-select:none; color:var(--color-text-muted);">تذكرني على هذا الجهاز 💾</label>
+            </div>
+
             <button type="submit" class="btn btn-primary btn-lg btn-full">دخول الحساب 🚀</button>
           </form>
 
@@ -916,6 +935,103 @@ function initAuthPage() {
     fReg.classList.add('hidden');
   });
 
+  // Show/Hide Password Toggle
+  const toggleR = document.getElementById('toggleRPassword');
+  const rPass = document.getElementById('rPassword');
+  toggleR?.addEventListener('click', () => {
+    const isPass = rPass.getAttribute('type') === 'password';
+    rPass.setAttribute('type', isPass ? 'text' : 'password');
+    toggleR.textContent = isPass ? '🙈' : '👁️';
+  });
+
+  const toggleL = document.getElementById('toggleLPassword');
+  const lPass = document.getElementById('lPassword');
+  toggleL?.addEventListener('click', () => {
+    const isPass = lPass.getAttribute('type') === 'password';
+    lPass.setAttribute('type', isPass ? 'text' : 'password');
+    toggleL.textContent = isPass ? '🙈' : '👁️';
+  });
+
+  // Real-time phone inputs validation and check
+  const rPhone = document.getElementById('rPhone');
+  const rPhoneFeedback = document.getElementById('rPhoneFeedback');
+  const phoneRegex = /^01[0125]\d{8}$/;
+
+  rPhone?.addEventListener('input', () => {
+    const val = rPhone.value.trim();
+    if (!val) {
+      rPhoneFeedback.textContent = '';
+      return;
+    }
+    if (!phoneRegex.test(val)) {
+      rPhoneFeedback.textContent = '❌ رقم غير صحيح (يجب أن يكون 11 رقم ويبدأ بـ 01)';
+      rPhoneFeedback.style.color = 'var(--color-danger)';
+    } else {
+      // Check if phone already registered in database
+      const db = auth.loadDb();
+      const exists = db.some(u => u.phone === val);
+      if (exists) {
+        rPhoneFeedback.textContent = '⚠️ الهاتف مسجل بالفعل! اضغط على "دخول سريع" لتسجيل الدخول.';
+        rPhoneFeedback.style.color = 'var(--color-warning)';
+      } else {
+        rPhoneFeedback.textContent = '✅ رقم هاتف جديد وصحيح';
+        rPhoneFeedback.style.color = 'var(--color-success)';
+      }
+    }
+  });
+
+  const lPhone = document.getElementById('lPhone');
+  const lPhoneFeedback = document.getElementById('lPhoneFeedback');
+  lPhone?.addEventListener('input', () => {
+    const val = lPhone.value.trim();
+    if (!val) {
+      lPhoneFeedback.textContent = '';
+      return;
+    }
+    if (!phoneRegex.test(val)) {
+      lPhoneFeedback.textContent = '❌ رقم غير صحيح';
+      lPhoneFeedback.style.color = 'var(--color-danger)';
+    } else {
+      const db = auth.loadDb();
+      const exists = db.some(u => u.phone === val);
+      if (exists) {
+        lPhoneFeedback.textContent = '✅ حساب مسجل وجاهز للدخول';
+        lPhoneFeedback.style.color = 'var(--color-success)';
+      } else {
+        lPhoneFeedback.textContent = '❌ هذا الرقم غير مسجل لدينا، يرجى إنشاء حساب جديد';
+        lPhoneFeedback.style.color = 'var(--color-danger)';
+      }
+    }
+  });
+
+  tabReg?.addEventListener('click', () => {
+    sound.playClick();
+    tabReg.classList.add('active');
+    tabReg.style.borderBottom = '2px solid var(--color-primary)';
+    tabReg.style.color = 'var(--color-text)';
+    
+    tabLogin.classList.remove('active');
+    tabLogin.style.borderBottom = 'none';
+    tabLogin.style.color = 'var(--color-text-muted)';
+    
+    fReg.classList.remove('hidden');
+    fLogin.classList.add('hidden');
+  });
+
+  tabLogin?.addEventListener('click', () => {
+    sound.playClick();
+    tabLogin.classList.add('active');
+    tabLogin.style.borderBottom = '2px solid var(--color-primary)';
+    tabLogin.style.color = 'var(--color-text)';
+    
+    tabReg.classList.remove('active');
+    tabReg.style.borderBottom = 'none';
+    tabReg.style.color = 'var(--color-text-muted)';
+    
+    fLogin.classList.remove('hidden');
+    fReg.classList.add('hidden');
+  });
+
   // Handle register
   fReg?.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -925,8 +1041,9 @@ function initAuthPage() {
     const password = document.getElementById('rPassword').value;
     const address = document.getElementById('rAddress').value;
     const area = document.getElementById('rArea').value;
+    const rememberMe = document.getElementById('rRememberMe').checked;
 
-    const res = auth.register({ name, phone, password, address, area });
+    const res = auth.register({ name, phone, password, address, area, rememberMe });
     if (res.success) {
       showToast(res.message, 'success');
       sound.playSuccess();
@@ -943,7 +1060,8 @@ function initAuthPage() {
     sound.playClick();
     const phone = document.getElementById('lPhone').value;
     const password = document.getElementById('lPassword').value;
-    const res = auth.login(phone, password);
+    const rememberMe = document.getElementById('lRememberMe').checked;
+    const res = auth.login(phone, password, rememberMe);
     if (res.success) {
       showToast(res.message, 'success');
       sound.playSuccess();

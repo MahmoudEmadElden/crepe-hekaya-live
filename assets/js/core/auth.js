@@ -16,8 +16,11 @@ class AuthManager {
   }
 
   loadUser() {
-    const saved = localStorage.getItem(this.userKey);
-    return saved ? JSON.parse(saved) : null;
+    const savedLocal = localStorage.getItem(this.userKey);
+    if (savedLocal) return JSON.parse(savedLocal);
+    const savedSession = sessionStorage.getItem(this.userKey);
+    if (savedSession) return JSON.parse(savedSession);
+    return null;
   }
 
   loadRecipes() {
@@ -32,7 +35,14 @@ class AuthManager {
 
   saveUser() {
     if (this.user) {
-      localStorage.setItem(this.userKey, JSON.stringify(this.user));
+      const rememberMe = localStorage.getItem('crepe_hekaya_remember_user') === 'true';
+      if (rememberMe) {
+        localStorage.setItem(this.userKey, JSON.stringify(this.user));
+        sessionStorage.removeItem(this.userKey);
+      } else {
+        sessionStorage.setItem(this.userKey, JSON.stringify(this.user));
+        localStorage.removeItem(this.userKey);
+      }
       // Also update in all users database
       const db = this.loadDb();
       const idx = db.findIndex(u => u.phone === this.user.phone);
@@ -44,6 +54,7 @@ class AuthManager {
       localStorage.setItem(this.dbKey, JSON.stringify(db));
     } else {
       localStorage.removeItem(this.userKey);
+      sessionStorage.removeItem(this.userKey);
     }
     this.notify();
   }
@@ -52,7 +63,7 @@ class AuthManager {
     localStorage.setItem(this.recipesKey, JSON.stringify(this.savedRecipes));
   }
 
-  register({ name, phone, password, address, area }) {
+  register({ name, phone, password, address, area, rememberMe = true }) {
     if (!name || name.trim().length < 3) {
       return { success: false, message: 'الرجاء إدخال اسم صحيح مكون من 3 حروف على الأقل' };
     }
@@ -73,6 +84,8 @@ class AuthManager {
       return { success: false, message: 'هذا الهاتف مسجل لدينا بالفعل! يرجى تسجيل الدخول بكتابة كلمة المرور.' };
     }
 
+    localStorage.setItem('crepe_hekaya_remember_user', rememberMe ? 'true' : 'false');
+
     // Default stats for new profile
     this.user = {
       name: name.trim(),
@@ -90,7 +103,7 @@ class AuthManager {
     return { success: true, message: 'تم إنشاء حسابك بنجاح! مرحباً بك في عائلة كريب حكاية.' };
   }
 
-  login(phone, password) {
+  login(phone, password, rememberMe = true) {
     const phoneRegex = /^01[0125]\d{8}$/;
     if (!phone || !phoneRegex.test(phone)) {
       return { success: false, message: 'رقم الهاتف المكتوب غير صحيح' };
@@ -104,9 +117,10 @@ class AuthManager {
     const matched = db.find(u => u.phone === phone.trim());
     if (matched) {
       if (matched.password === password.trim()) {
+        localStorage.setItem('crepe_hekaya_remember_user', rememberMe ? 'true' : 'false');
         this.user = matched;
         this.notify();
-        localStorage.setItem(this.userKey, JSON.stringify(this.user));
+        this.saveUser();
         return { success: true, message: `أهلاً بك مجدداً يا ${this.user.name} 👋` };
       } else {
         return { success: false, message: 'كلمة المرور غير صحيحة، يرجى المحاولة مرة أخرى' };
@@ -117,6 +131,7 @@ class AuthManager {
 
   logout() {
     this.user = null;
+    localStorage.removeItem('crepe_hekaya_remember_user');
     this.saveUser();
   }
 
